@@ -37,9 +37,6 @@ SOFTWARE.
 
 *******************************************************************************************/
 
- 
-
-/* BEGIN DECLARE CUSTOMIZALBE VARIABLES */
 DECLARE @onlyLastFull INT = 0; 
 DECLARE @onlyLastDIFF INT = 0; 
 DECLARE @CustomBAKSource INT = 0;
