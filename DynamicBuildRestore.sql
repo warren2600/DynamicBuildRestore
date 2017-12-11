@@ -63,17 +63,17 @@ DECLARE @DBNameFolderLog INT = 0;
 
  BEGIN ASSIGN CUSTOM VARIABLES  
 
-/*******************************************************************************************
+*******************************************************************************************/
 
 SET @onlyLastFull = 0; 
 SET @onlyLastDIFF = 0; 
 SET @DRRecover = 0; 
 SET @singleuser = 0; 
-SET @WithMove = 1; 
+SET @WithMove = 0; 
 SET @TargetDataPath = 'F:\Data\'; 
 SET @TargetLogPath = 'G:\Log\'; 
 SET @SingleDB = 0; 
-SET @SingleDBName = 'DBNAMEHERE'; 																
+SET @SingleDBName = 'Demo1'; 																
 SET @CustomBAKSource = 0; 
 SET @CustomBAKPath = '\\share\sql\backups\root\'; 
 SET @AppendUNCtoLogPath = 0; 
@@ -81,13 +81,13 @@ SET @CustomLOGSource = 0;
 SET @CustomLOGPath = 'Y:\restore';
 SET @DBNameFolderLog = 0; -- appends dbname after the custom log path
 --SET @STOPAT = '8/22/2017 10:00am' --not tested
-SET @DEBUG = 0; 
+SET @DEBUG = 1; 
 
 /*******************************************************************************************
 
 	END ASSIGN CUSTOM VARIABLES  
 
-/*******************************************************************************************
+*******************************************************************************************/
 
 
 /* DECLARE ALL OTHER VARIABLES */
@@ -240,12 +240,13 @@ END
     SET @Recovery = @isNoRecovery; --set default to norecovery
     SET @Message = '';
 
-    /* default values - too much abstraction -no turning back now this is bat country*/
-    /*
+    
+ /*
+options bitwise value meaning
 onlylastfull = 1
 onlylastdiff = 2
 onlysingleuser = 4
-nodiff = 8
+nodiffs = 8
 nologs = 16
 */
 
@@ -414,45 +415,41 @@ nologs = 16
         PRINT '-- NO LOGS';
     END;
 
+  
 
-    /* recovery options
-1 - full only
-2 - no diffs AND no logs 
-*/
-    IF (1 & @Options = 1) -- full only recover
-    BEGIN
-        IF (@DRRecover = 0)
-        BEGIN
-            SET @Recovery = @isRecovery;
-            SET @Message = '-- FULL ONLY ';
-        END;
-        ELSE IF (@DRRecover = 1)
-        BEGIN
-            SET @Recovery = @isNoRecovery;
-            SET @Message = '-- FULL ONLY WITH NO RECOVERY';
-        END;
-    END;
-    ELSE IF (8 & @Options = 8) --no diffs, but logs exist so don't recover
+ IF ((8 & @Options = 8) and (16 & @options = 0)) --no diffs, but logs exist so don't recover
     BEGIN
         SET @Recovery = @isNoRecovery;
         SET @Message = '-- NO DIFF! LOGS EXIST! ';
     END;
-    ELSE IF (8 & @Options = 8)
-            AND (16 & @Options = 16) --no diffs and no logs recover
+
+ IF ((8 & @Options = 8) AND (16 & @Options = 16)) --no diffs and no logs recover
     BEGIN
         SET @Recovery = @isRecovery;
         SET @Message = '-- NO DIFF! AND NO LOGS! ';
     END;
-    ELSE
-    BEGIN
-        SET @Recovery = @isNoRecovery; --all other options we want no recovery
-        SET @Message = '-- setting ' + @Recovery + ' initally';
-    END;
+ IF (@DRRecover = 1)
+        BEGIN
+            SET @Recovery = @isNoRecovery;
+            SET @Message = '-- DR NO RECOVERY';
+        END;
+IF ((1 & @options = 0) and (2 & @options = 0))  
+	BEGIN
+		SET @Message = '-- Applying all backup options'
+	END
+
 
     IF @DEBUG = 1
     BEGIN
         PRINT @Message;
     END;
+
+	/* Add the bitwise values to debug */
+	IF @DEBUG = 1 
+		BEGIN
+			SET @Message = (Select '-- Options bitwise Value = ' + CONVERT(VARCHAR(10),@Options))
+			Print @Message
+		END
 
     /* TABLE variable for data files */
     IF OBJECT_ID('tempdb..#DataFiletable') IS NOT NULL
@@ -486,7 +483,6 @@ nologs = 16
     /* get file count and loop through*/
     IF @WithMove = 1
     BEGIN
-
         --declare cursor variables
         DECLARE @fileid INT;
         DECLARE @typedesc VARCHAR(10);
@@ -494,7 +490,7 @@ nologs = 16
 
         SET @DataFileCount =
         (
-            SELECT MAX(row_id) FROM #DataFileTable
+            SELECT COUNT(row_id) FROM #DataFileTable WHERE typedesc = 'ROWS'
         );
 
         DECLARE db_master_files CURSOR FAST_FORWARD FOR
@@ -549,21 +545,13 @@ nologs = 16
     SET @SQL = @SQL + 'REPLACE, STATS = 1,';
 
 
-    IF @DEBUG = 1
+    IF @DEBUG = 1 and @WithMove = 1
     BEGIN
         SET @Message
             = '-- Datafilecount = ' + CAST(@DataFileCount AS NVARCHAR(4)) + ' | NDFCount = '
               + CAST(@NDFCount AS NVARCHAR(4));
         PRINT @Message;
     END;
-
-    /* while not simple and onlylastfull = 0 , we want to apply more backups */
-    /*if ((@onlyLastFull = 0) OR (@RecoveryID <> 3)) and @NoDiff = 0 and @onlyLastDIFF = 0
-BEGIN
-set @Recovery = 'NO' + @Recovery
-END
-*/
-    -- if logs and no diffs then we recover, or full only) 
 
 
     SET @SQL = @SQL + @Recovery; -- + CHAR(13 ) 
@@ -886,8 +874,6 @@ END;
 CLOSE DBSToRestore;
 DEALLOCATE DBSToRestore;
 
-
-/* Troubleshoot any LSN issues use the #logbackuphistory table */
 
 
 
