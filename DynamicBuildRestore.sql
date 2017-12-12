@@ -59,6 +59,8 @@ DECLARE @DBNameFolderLog INT = 0;
 /*******************************************************************************************
 
  BEGIN ASSIGN CUSTOM VARIABLES  
+ 
+ Adjust the values below to control how the restore script is built
 
 *******************************************************************************************/
 
@@ -83,6 +85,8 @@ SET @DEBUG = 1;
 /*******************************************************************************************
 
 	END ASSIGN CUSTOM VARIABLES  
+	
+	Don't alter below this for building restore script
 
 *******************************************************************************************/
 
@@ -404,16 +408,51 @@ nologs = 16
     IF @NoDiff = 1
     BEGIN
         SET @Options += 8;
-        PRINT '-- NO DIFFS';
+        --PRINT '-- NO DIFFS';
     END;
     IF @NoLogs = 1
     BEGIN
         SET @Options += 16;
-        PRINT '-- NO LOGS';
+        --PRINT '-- NO LOGS';
     END;
 
-  
+	
+IF @onlylastFull = 1
+	BEGIN
+		SET @recovery = @isrecovery;
+	END
+ELSE IF @onlylastdiff = 1
+	BEGIN
+		SET @recovery = @isRecovery;
+	END
+ELSE  IF @nologs = 1 and @nodiff = 1 -- no logs and no diffs 
+	BEGIN
+		SET @recovery = @isRecovery;
+		SET @Message = '-- NO LOGS and NO DIFFS';
+	END
+ELSE IF  @nologs = 1 and @nodiff = 0 --no logs but diff 
+	BEGIN
+		SET @recovery = @isRecovery;
+		SET @Message = '--NO Logs,  DIFFS exist'
+	END
+ELSE IF @nodiff = 1 and @nologs = 0  --no diffs but logs exist
+	BEGIN
+		 SET @recovery = @isNoRecovery;
+		 SET @Message = '-- NO DIFFS, Logs EXIST ';
+	END
+ELSE IF @nodiff = 0 and @nologs = 0 --all files exist 
+	BEGIN
+		SET @Recovery = @isNoRecovery;
+		SET @Message = '-- No options selected restoring all available'
+	END
+--at the end set NoRecovery is DR
+IF @DRrecover = 1 
+BEGIN
+SET @recovery = @isNoRecovery;
+END
 
+  
+  /*
  IF ((8 & @Options = 8) and (16 & @options = 0)) --no diffs, but logs exist so don't recover
     BEGIN
         SET @Recovery = @isNoRecovery;
@@ -434,7 +473,7 @@ IF ((1 & @options = 0) and (2 & @options = 0))
 	BEGIN
 		SET @Message = '-- Applying all backup options'
 	END
-
+	*/
 
     IF @DEBUG = 1
     BEGIN
@@ -444,8 +483,8 @@ IF ((1 & @options = 0) and (2 & @options = 0))
 	/* Add the bitwise values to debug */
 	IF @DEBUG = 1 
 		BEGIN
-			SET @Message = (Select '-- Options bitwise Value = ' + CONVERT(VARCHAR(10),@Options))
-			Print @Message
+			SET @Message = (Select '-- Options bitwise Value = ' + CONVERT(VARCHAR(10),@Options));
+			Print @Message;
 		END
 
     /* TABLE variable for data files */
