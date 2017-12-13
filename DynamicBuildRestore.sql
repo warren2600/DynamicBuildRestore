@@ -37,7 +37,7 @@ SOFTWARE.
 
 *******************************************************************************************/
 
-DECLARE @onlyLastFull INT = 0; 
+DECLARE @onlyLastFull INT = 1; 
 DECLARE @onlyLastDIFF INT = 0; 
 DECLARE @CustomBAKSource INT = 0;
 DECLARE @CustomBAKPath VARCHAR(500); -- New path for restore location (DR/DEV scenario)
@@ -54,6 +54,7 @@ DECLARE @SingleDBName NVARCHAR(50);
 DECLARE @AppendUNCtoLogPath INT;
 DECLARE @DEBUG INT = 0;
 DECLARE @DBNameFolderLog INT = 0;
+DECLARE @StatsValue INT = 10;
 
 
 /*******************************************************************************************
@@ -63,25 +64,24 @@ DECLARE @DBNameFolderLog INT = 0;
  Adjust the values below to control how the restore script is built
 
 *******************************************************************************************/
-
 SET @onlyLastFull = 0; 
 SET @onlyLastDIFF = 0; 
 SET @DRRecover = 0; 
 SET @singleuser = 0; 
 SET @WithMove = 0; 
-SET @TargetDataPath = 'F:\Data\'; 
-SET @TargetLogPath = 'G:\Log\'; 
-SET @SingleDB = 0; 
+SET @TargetDataPath = 'D:\Data\'; 
+SET @TargetLogPath = 'L:\Log\'; 
+SET @SingleDB = 1; 
 SET @SingleDBName = 'Demo1'; 																
 SET @CustomBAKSource = 0; 
 SET @CustomBAKPath = '\\share\sql\backups\root\'; 
 SET @AppendUNCtoLogPath = 0; 
 SET @CustomLOGSource = 0; 
-SET @CustomLOGPath = 'Y:\restore';
+SET @CustomLOGPath = 'R:\Restore';
 SET @DBNameFolderLog = 0; -- appends dbname after the custom log path
 --SET @STOPAT = '8/22/2017 10:00am' --not tested
-SET @DEBUG = 1; 
-
+SET @StatsValue = 10;
+SET @DEBUG = 0; 
 /*******************************************************************************************
 
 	END ASSIGN CUSTOM VARIABLES  
@@ -416,15 +416,22 @@ nologs = 16
         --PRINT '-- NO LOGS';
     END;
 
-	
+/* setting recovery for full based on parameters and presence of diff/logs */	
 IF @onlylastFull = 1
 	BEGIN
 		SET @recovery = @isrecovery;
+		SET @Message = '-- Only last Full set';
 	END
 ELSE IF @onlylastdiff = 1
 	BEGIN
-		SET @recovery = @isRecovery;
-	END
+		SET @recovery = @isNoRecovery;
+		SET @Message = '-- Only Last Diff set';
+		IF @NoDiff = 1 
+			BEGIN
+			SET @Message = '-- /* No diffs exist using last full only!  */';
+			SET @Recovery = @isNoRecovery;
+			END
+		END
 ELSE  IF @nologs = 1 and @nodiff = 1 -- no logs and no diffs 
 	BEGIN
 		SET @recovery = @isRecovery;
@@ -432,18 +439,20 @@ ELSE  IF @nologs = 1 and @nodiff = 1 -- no logs and no diffs
 	END
 ELSE IF  @nologs = 1 and @nodiff = 0 --no logs but diff 
 	BEGIN
-		SET @recovery = @isRecovery;
-		SET @Message = '--NO Logs,  DIFFS exist'
+		SET @recovery = @isNoRecovery;
+		SET @Message = '-- NO Logs,  DIFFS exist';
+
 	END
 ELSE IF @nodiff = 1 and @nologs = 0  --no diffs but logs exist
 	BEGIN
 		 SET @recovery = @isNoRecovery;
 		 SET @Message = '-- NO DIFFS, Logs EXIST ';
+		 
 	END
 ELSE IF @nodiff = 0 and @nologs = 0 --all files exist 
 	BEGIN
 		SET @Recovery = @isNoRecovery;
-		SET @Message = '-- No options selected restoring all available'
+		SET @Message = '-- No options selected restoring all available';
 	END
 --at the end set NoRecovery is DR
 IF @DRrecover = 1 
@@ -481,11 +490,11 @@ IF ((1 & @options = 0) and (2 & @options = 0))
     END;
 
 	/* Add the bitwise values to debug */
-	IF @DEBUG = 1 
-		BEGIN
-			SET @Message = (Select '-- Options bitwise Value = ' + CONVERT(VARCHAR(10),@Options));
-			Print @Message;
-		END
+	--IF @DEBUG = 1 
+		--BEGIN
+			--SET @Message = (Select '-- Options bitwise Value = ' + CONVERT(VARCHAR(10),@Options));
+			--Print @Message;
+		--END
 
     /* TABLE variable for data files */
     IF OBJECT_ID('tempdb..#DataFiletable') IS NOT NULL
@@ -578,7 +587,7 @@ IF ((1 & @options = 0) and (2 & @options = 0))
 
 
     --add stats and replace
-    SET @SQL = @SQL + 'REPLACE, STATS = 1,';
+    SET @SQL = @SQL + 'REPLACE, STATS = ' + CONVERT(NVARCHAR(3),@StatsValue) + ',';
 
 
     IF @DEBUG = 1 and @WithMove = 1
@@ -617,13 +626,10 @@ IF ((1 & @options = 0) and (2 & @options = 0))
         /* check diffs*/
         IF @NoDiff = 1
         BEGIN
-            --set @NoDiff = 1
             SET @LogChainStart = @LASTFULL;
         END;
         ELSE
         BEGIN
-            --set @nodiff = 0
-
             SET @LogChainStart = @LASTDIFF;
             --assign last diff name
             SELECT @LASTDIFFNAME = physical_device_name
@@ -680,10 +686,8 @@ IF ((1 & @options = 0) and (2 & @options = 0))
                 physical_device_name VARCHAR(1000)
             );
 
-            /* using the identity, based on backup_start_date order, to run through backup chain order.
-This is not the most accurate, but only edge cases result in LSN out of order with sequential backup start dates.
-
-A 100% accurate way would be to create a recursive CTE, using the full/diff LSN as the anchor.
+/* using the identity, based on backup_start_date order, to run through backup chain order.
+Need to change this to LSN
 */
 
             INSERT INTO #LogBackupHistory
@@ -716,40 +720,29 @@ A 100% accurate way would be to create a recursive CTE, using the full/diff LSN 
             PRINT '/*** ' + QUOTENAME(@DBNAME) + ' DIFFERENTIAL RESTORE ***/';
             SET @SQL
                 = 'Restore Database ' + QUOTENAME(@DBNAME) + ' FROM DISK = N''' + @LASTDIFFNAME
-                  + ''' WITH REPLACE, STATS = 1, '; -- + CHAR(13 )
+                  + ''' WITH REPLACE, STATS = ' + CONVERT(NVARCHAR(3),@StatsValue) + ', '; -- + CHAR(13 )
         END;
-
-
 
 
         IF @onlyLastDIFF = 1
         BEGIN
             SET @Recovery = @isRecovery;
-            IF @DRRecover = 1
-            BEGIN
-                SET @Recovery = @isNoRecovery;
-            END;
         END;
         ELSE IF @NoLogs = 1
         BEGIN
-            IF @DRRecover = 1
-            BEGIN
-                SET @Recovery = @isNoRecovery;
-                BREAK;
-            END;
             SET @Recovery = @isRecovery;
         END;
         ELSE IF @RecoveryID = 3
         BEGIN
-            IF @DRRecover = 1
-            BEGIN
-                SET @Recovery = @isNoRecovery;
-            END;
             SET @Recovery = @isRecovery;
         END;
-        ELSE
-            SET @Recovery = @isNoRecovery;
+       -- ELSE
+        --    SET @Recovery = @isNoRecovery;
 
+if @DRRecover = 1
+BEGIN
+	SET @Recovery = @isNoRecovery
+END
 
         --only print if the variable changed. ie if last full only is not selected and diffs are present
         IF @NoDiff = 0
@@ -850,7 +843,7 @@ A 100% accurate way would be to create a recursive CTE, using the full/diff LSN 
                 IF @iCount < @LOGCOUNT - 1
                 BEGIN
                     SET @SQL
-                        = 'RESTORE LOG ' + QUOTENAME(@DBNAME) + ' FROM Disk =N''' + @LogPhysical + ''' WITH STATS = 1,';
+                        = 'RESTORE LOG ' + QUOTENAME(@DBNAME) + ' FROM Disk =N''' + @LogPhysical + ''' WITH STATS = ' + CONVERT(NVARCHAR(3),@StatsValue) + ',';
 						  IF @STOPAT IS NOT NULL
 							BEGIN
 							SET @SQL = @SQL + 'STOPAT=''' + CAST(@STOPAT as varchar(23)) + ''',';
@@ -862,7 +855,7 @@ A 100% accurate way would be to create a recursive CTE, using the full/diff LSN 
                 IF @iCount = @LOGCOUNT - 1
                 BEGIN
                     SET @SQL
-                        = 'RESTORE LOG ' + QUOTENAME(@DBNAME) + ' FROM Disk =N''' + @LogPhysical + ''' WITH STATS = 1,';
+                        = 'RESTORE LOG ' + QUOTENAME(@DBNAME) + ' FROM DISK =N''' + @LogPhysical + ''' WITH STATS = ' + CONVERT(NVARCHAR(3),@StatsValue) + ',';
 					 IF @STOPAT IS NOT NULL
 							BEGIN
 							SET @SQL = @SQL + 'STOPAT=''' + CAST(@STOPAT as varchar(23)) + ''',';
