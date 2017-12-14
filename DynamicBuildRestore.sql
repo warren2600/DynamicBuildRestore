@@ -81,7 +81,7 @@ SET @CustomLOGPath = 'R:\Restore';
 SET @DBNameFolderLog = 0; -- appends dbname after the custom log path
 --SET @STOPAT = '8/22/2017 10:00am' --not tested
 SET @StatsValue = 10;
-SET @DEBUG = 0; 
+SET @DEBUG = 1; 
 /*******************************************************************************************
 
 	END ASSIGN CUSTOM VARIABLES  
@@ -335,12 +335,12 @@ nologs = 16
     WHERE backup_type = 'D';
 
 
-    /* need to know if no diffs or logs exist */
-    IF (NOT EXISTS (SELECT * FROM #BackupHistory WHERE backup_type IN ( 'I' )))
+    /* need to know if no diffs or logs exist beyond the last full*/
+    IF (NOT EXISTS (SELECT * FROM #BackupHistory WHERE backup_type IN ( 'I' ) and backup_start_date > @LASTFULL))
     BEGIN
         SET @NoDiff = 1;
     END;
-    IF (NOT EXISTS (SELECT * FROM #BackupHistory WHERE backup_type IN ( 'L' )))
+    IF (NOT EXISTS (SELECT * FROM #BackupHistory WHERE backup_type IN ( 'L' ) and backup_start_date > @LASTFULL))
     BEGIN
         SET @NoLogs = 1;
     END;
@@ -419,11 +419,12 @@ nologs = 16
 /* setting recovery for full based on parameters and presence of diff/logs */	
 IF @onlylastFull = 1
 	BEGIN
-		SET @recovery = @isrecovery;
+		SET @recovery = @isRecovery;
 		SET @Message = '-- Only last Full set';
 	END
 ELSE IF @onlylastdiff = 1
 	BEGIN
+	    -- set full to norecover
 		SET @recovery = @isNoRecovery;
 		SET @Message = '-- Only Last Diff set';
 		IF @NoDiff = 1 
@@ -449,7 +450,7 @@ ELSE IF @nodiff = 1 and @nologs = 0  --no diffs but logs exist
 		 SET @Message = '-- NO DIFFS, Logs EXIST ';
 		 
 	END
-ELSE IF @nodiff = 0 and @nologs = 0 --all files exist 
+ELSE IF @nodiff = 0 and @nologs = 0  and @onlyLastDIFF = 0 and @onlylastdiff =0 --all files exist 
 	BEGIN
 		SET @Recovery = @isNoRecovery;
 		SET @Message = '-- No options selected restoring all available';
@@ -608,13 +609,12 @@ IF ((1 & @options = 0) and (2 & @options = 0))
     SET @NDFCount = 1;
 
     --DELETE FROM #DataFileTable
-
+	--if no recovery then get the remainder files
     IF @Recovery = @isNoRecovery
     BEGIN
         /* Create the backup history table to count diffs and logs */
 
-        IF @NoDiff = 0
-           AND @onlyLastFull = 0
+        IF @NoDiff = 0 AND @onlyLastFull = 0
         BEGIN
             /* get last diff beyond last full*/
             SELECT @LASTDIFF = MAX(backup_start_date)
@@ -902,12 +902,6 @@ END;
 
 CLOSE DBSToRestore;
 DEALLOCATE DBSToRestore;
-
-
-
-
-
-
 
 
 
