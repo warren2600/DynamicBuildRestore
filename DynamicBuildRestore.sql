@@ -40,14 +40,14 @@ SOFTWARE.
 DECLARE @onlyLastFull INT = 1; 
 DECLARE @onlyLastDIFF INT = 0; 
 DECLARE @CustomBAKSource INT = 0;
-DECLARE @CustomBAKPath VARCHAR(500); -- New path for restore location (DR/DEV scenario)
+DECLARE @CustomBAKPath NVARCHAR(500); -- New path for restore location (DR/DEV scenario)
 DECLARE @CustomLOGSource INT = 0;
 DECLARE @DRRecover INT = 0;
 DECLARE @singleuser INT = 0;
 DECLARE @TargetDataPath NVARCHAR(100);
 DECLARE @TargetLogPath NVARCHAR(100);
 DECLARE @STOPAT DATETIME = NULL;
-DECLARE @CustomLOGPath VARCHAR(500); 
+DECLARE @CustomLOGPath NVARCHAR(500); 
 DECLARE @WithMove INT = 0;
 DECLARE @SingleDB INT = 0;
 DECLARE @SingleDBName NVARCHAR(50);
@@ -122,8 +122,8 @@ DECLARE @Message NVARCHAR(1000); --message to display in output
 DECLARE @singleuserval INT = 4; -- constant value for bitwise
 DECLARE @nodiffval INT = 8; -- constant value for bitwise
 DECLARE @nologsval INT = 16; -- constant value for bitwise
-DECLARE @SERVERNAME VARCHAR(50); -- Store serveranme from @@servername for Log UNC path
-DECLARE @LogPhysical VARCHAR(500);
+DECLARE @SERVERNAME NVARCHAR(50); -- Store serveranme from @@servername for Log UNC path
+DECLARE @LogPhysical NVARCHAR(500);
 
 
 
@@ -572,7 +572,7 @@ IF ((1 & @options = 0) and (2 & @options = 0))
                 SET @NDFCount = @NDFCount + 1;
                 SET @SQL
                     = @SQL + 'MOVE ''' + @logicalname + ''' To ''' + @TargetDataPath + @DBNAME + '_'
-                      + CAST(@NDFCount AS NVARCHAR(1)) + '.ndf'',' + CHAR(13);
+                      + CAST(@NDFCount AS NVARCHAR(4)) + '.ndf'',' + CHAR(13);
             /* Iterate NFF count */
             END;
 
